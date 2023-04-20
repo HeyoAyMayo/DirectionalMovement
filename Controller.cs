@@ -3,120 +3,142 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
-using System;
+using RhythmCube.DataTypes;
 
 public class Controller : MonoBehaviour
 {
-    // A struct for horizontal, vertical, and diagonal positions 
-    [Serializable]
-    public struct Directions
-    {
-        public Transform middle;
-        public Transform up;
-        public Transform down;
-        public Transform left;
-        public Transform right;
-
-        public Transform upLeft;
-        public Transform upRight;
-        public Transform downLeft;
-        public Transform downRight;
-    }
-    private PlayerInput input;
 
 
     // Some inspector stuff
     [Header("Movement Settings")]
     [Tooltip("The points where the player move to when inputs are made")] // Tooltip to display when hovered
-    [SerializeField] // Serialize private field
-    private Directions pointLocations;  // All the locations where our player moves to
+    public Directions<Transform> pointLocations;  // All the locations where our player moves to
 
-    [SerializeField] private InputAction movementInput;
-
+    [SerializeField] private InputActionAsset input;
     // Both vertical and horizontal directions 
-    private float vertical, horizontal; 
+    private float vertical, horizontal;
+    // Lerping
     private Vector3 lerpTarget;
-    private float lerpT = 0.1f;
+    [Tooltip("How much to lerp to the target position")]
+    [SerializeField]
+    private float lerpSpeed = 0.1f;
 
+
+    public bool moving { get { return true; } set { moving = value; } }
     private void Start()
     {
-        movementInput.Enable();
+        transform.position = pointLocations.middle.position;
     }
+    private void OnEnable()
+    {
+        input["Directional"].Enable();
+    }
+
+    private void OnDisable()
+    {
+        input["Directional"].Disable();
+    }
+
     // Start is called before the first frame update
     private void Update()
     {
+        
         if (transform.position != lerpTarget)
         {
-            float x = transform.position.x, y = transform.position.y, z = transform.position.z;
-            transform.position = new Vector3(Mathf.Lerp(x, lerpTarget.x, lerpT), Mathf.Lerp(y, lerpTarget.y, lerpT), Mathf.Lerp(z, lerpTarget.z, lerpT));
+            LerpToTarget();
         }
-        DirectionalMovement();
-        
+        if (GameManager.Instance.gameOver == false && moving)
+        {
+            DirectionalMovement();
+        }
+    }
+    private void LerpToTarget()
+    {
+        transform.position = LerpVector(transform.position, lerpTarget, lerpSpeed * Time.deltaTime);
+    }
+    public static Vector3 LerpVector( Vector3 position, Vector3 targetPosition, float t)
+    {
+        float x = Mathf.Lerp(position.x, targetPosition.x, t);
+        float y = Mathf.Lerp(position.y, targetPosition.y, t);
+        float z = Mathf.Lerp(position.z, targetPosition.z, t);
+        return new Vector3(x, y, z);
     }
     private void DirectionalMovement()
     {
-        Vector2 m_Move = movementInput.ReadValue<Vector2>();
+        lerpTarget = GetLerpTarget();
+    }
+    private Vector3 GetLerpTarget()
+    {
+        Vector2 m_Move = input["Directional"].ReadValue<Vector2>();
         horizontal = m_Move.x;
         vertical = m_Move.y;
         if (horizontal == 0 && vertical == 0)
         {
-            lerpTarget = pointLocations.middle.position;
+            return pointLocations.middle.position;
         }
-        if (Mathf.Abs(horizontal) > 0 && vertical == 0)
+        if (Mathf.Abs(horizontal) > Mathf.Abs(vertical))
         {
-            switch (Mathf.RoundToInt(horizontal))
-            {
-                default:
-                    break;
-                case 1:
-                    lerpTarget = pointLocations.left.position;
-                    break;
-                case -1:
-                    lerpTarget = pointLocations.right.position;
-                    break;
-            }
+            return GetHorizontalTarget(horizontal);
         }
-        if ( Mathf.Abs(vertical) > 0 && horizontal == 0)
+        if ( Mathf.Abs(vertical) > Mathf.Abs(horizontal))
         {
-            switch (Mathf.RoundToInt(vertical))
-            {
-                default:
-                    break;
-                case 1:
-                    lerpTarget = pointLocations.up.position;
-                    break;
-                case -1:
-                    lerpTarget = pointLocations.down.position;
-                    break;
-            }
+            return GetVerticalTarget(vertical);
         }
-        if (Mathf.Abs(vertical) > 0 && Mathf.Abs(horizontal) > 0)
-        {
-            if (vertical > 0)
-            {
-                if (horizontal > 0)
-                {
-                    lerpTarget = pointLocations.upLeft.position;
-                }
-                if (horizontal < 0)
-                {
-                    lerpTarget = pointLocations.upRight.position;
-                }
-            }
-            if (vertical < 0)
-            {
-                if (horizontal > 0)
-                {
-                    lerpTarget = pointLocations.downLeft.position;
-                }
-                if (horizontal < 0)
-                {
-                    lerpTarget = pointLocations.downRight.position;
-                }
-            }
-        }
+        return GetDiagonalTarget(vertical, horizontal);
     }
 
+    private Vector3 GetDiagonalTarget(float verticalInput, float horizontalInput)
+    {
+        if (!(verticalInput > 0) && !(verticalInput < 0))
+        {
+            return new();
+        }
+        if (verticalInput > 0)
+        {
+            if (horizontalInput > 0 )
+            {
+                return pointLocations.upLeft.position;
+            }
+            if (horizontalInput < 0)
+            {
+                return pointLocations.upRight.position;
+            }
+        }
+        if (verticalInput < 0)
+        {
+            if (horizontalInput > 0)
+            {
+                return pointLocations.downLeft.position;
+            }
+            if (horizontalInput < 0)
+            {
+                return pointLocations.downRight.position;
+            }
+        }
+        return new();
+    }
+    private Vector3 GetVerticalTarget(float verticalInput)
+    {
+        switch (Mathf.RoundToInt(verticalInput))
+        {
+            default:
+                return new();
+            case 1:
+                return pointLocations.up.position;
+            case -1:
+                return pointLocations.down.position;
+        }
+    }
+    private Vector3 GetHorizontalTarget(float horizontalInput)
+    {
+        switch (Mathf.RoundToInt(horizontalInput))
+        {
+            default:
+                return new();
+            case 1:
+                return pointLocations.left.position;
+            case -1:
+                return pointLocations.right.position;
+        }
+    }
 }
-
- 
